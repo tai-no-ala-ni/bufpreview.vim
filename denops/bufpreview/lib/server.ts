@@ -1,9 +1,12 @@
 import { Denops } from "https://deno.land/x/denops_std@v2.0.0/mod.ts";
 import { v4 } from "https://deno.land/std@0.109.0/uuid/mod.ts";
 
+import Markdown from "./filetype/markdown/markdown.ts";
 import Buffer from "./buffer.ts";
 
 export default class Server {
+  private md = new Markdown();
+
   private _denops: Denops;
   private _bufnr: number;
   private _onClose: () => void;
@@ -20,7 +23,7 @@ export default class Server {
   constructor(
     denops: Denops,
     bufnr: number,
-    onClose: () => void,
+    onClose: () => void
     // サーバ側で通信が切断された時に呼ばれます
   ) {
     this._denops = denops;
@@ -32,7 +35,7 @@ export default class Server {
     // 更新
     this._buffer.events.on("textChanged", (buffer) => {
       const data = {
-        buf: buffer.lines
+        buf: this.md.toHTML(buffer.lines),
       };
 
       this._sockets.forEach((socket) => {
@@ -59,7 +62,7 @@ export default class Server {
 
     // クライアント
     this._body = Deno.readTextFileSync(
-      new URL("./filetype/markdown/client/markdown.html", import.meta.url),
+      new URL("./filetype/markdown/client/markdown.html", import.meta.url)
     );
   }
 
@@ -82,12 +85,31 @@ export default class Server {
               headers: new Headers({
                 "content-type": "text/html",
               }),
-            }),
+            })
           );
         } else if (
-          request.method === "GET" && new URL(request.url).pathname === "/ws"
+          request.method === "GET" &&
+          new URL(request.url).pathname === "/ws"
         ) {
           respondWith(this._wsHandle(request));
+        } else if (request.method === "GET") {
+          const cwd = await this._denops.call("getcwd");
+          try {
+            const file = await Deno.readFile(
+              `${cwd}${new URL(request.url).pathname}`
+            );
+            respondWith(
+              new Response(file, {
+                status: 200,
+              })
+            );
+          } catch (e) {
+            respondWith(
+              new Response("", {
+                status: 404,
+              })
+            );
+          }
         }
       }
     };
